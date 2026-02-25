@@ -1,0 +1,7 @@
+{
+  "name": "AI Health Copilot",
+  "description": "Personalized AI Health Assistant for Students. Analyzes medical reports, generates workout & nutrition plans, and tracks progress.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
