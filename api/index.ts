@@ -8,54 +8,59 @@ dotenv.config();
 // Vercel serverless functions write to /tmp
 const isProd = process.env.NODE_ENV === 'production';
 const dbPath = isProd ? '/tmp/health_copilot.db' : path.join(process.cwd(), 'health_copilot.db');
-const db = new Database(dbPath);
 
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT,
-    name TEXT,
-    age INTEGER,
-    gender TEXT,
-    height REAL,
-    weight REAL,
-    activity_level TEXT,
-    conditions TEXT,
-    goal TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+let db: any;
+try {
+  db = new Database(dbPath);
+  // Initialize Database
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE,
+      password TEXT,
+      name TEXT,
+      age INTEGER,
+      gender TEXT,
+      height REAL,
+      weight REAL,
+      activity_level TEXT,
+      conditions TEXT,
+      goal TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 
-  CREATE TABLE IF NOT EXISTS health_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    report_data TEXT,
-    summary TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
+    CREATE TABLE IF NOT EXISTS health_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      report_data TEXT,
+      summary TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
 
-  CREATE TABLE IF NOT EXISTS plans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    type TEXT,
-    content TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
+    CREATE TABLE IF NOT EXISTS plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      type TEXT,
+      content TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
 
-  CREATE TABLE IF NOT EXISTS progress_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    weight REAL,
-    mood TEXT,
-    energy_level INTEGER,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-`);
+    CREATE TABLE IF NOT EXISTS progress_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      weight REAL,
+      mood TEXT,
+      energy_level INTEGER,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+  `);
+} catch (err) {
+  console.error("Database initialization error:", err);
+}
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
