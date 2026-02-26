@@ -7,6 +7,8 @@ export interface HealthProfile {
   gender: string;
   height: number;
   weight: number;
+  targetWeight?: number;
+  workoutIntensity?: string;
   activityLevel: string;
   conditions: string[];
   goal?: string;
@@ -71,12 +73,15 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
     Based on the following user health profile and their desired body proportions/goal, generate a comprehensive 7-day health plan.
     Profile: ${JSON.stringify(profile)}
     Desired Goal: ${profile.goal || 'General Health'}
+    Target Weight: ${profile.targetWeight || 'N/A'} kg
+    Workout Intensity Level: ${profile.workoutIntensity || 'medium'}
     
     The plan should include:
-    1. A 7-day workout schedule (exercise type, duration, intensity). Tailor the exercises to help achieve the "Desired Goal" (e.g., if V-Taper, focus more on shoulders and back; if Hourglass, focus on glutes and core).
-    2. A daily nutrition plan (calorie target, macronutrient breakdown, sample meals). Adjust calories and macros based on the goal (e.g., surplus for Bulky, deficit for Weight Loss).
-    3. Specific food restrictions or recommendations based on health conditions.
-    4. A brief explanation of the reasoning behind this plan, specifically how it helps achieve the Desired Goal.
+    1. A 7-day workout schedule (exercise type, duration, intensity). Tailor the exercises to help achieve the "Desired Goal" and "Target Weight".
+    2. Adjust the workout volume and intensity based on the "Workout Intensity Level" provided (${profile.workoutIntensity || 'medium'}).
+    3. A daily nutrition plan (calorie target, macronutrient breakdown, sample meals). Adjust calories and macros based on the goal and target weight (e.g., surplus for Bulky/Weight Gain, deficit for Weight Loss).
+    4. Specific food restrictions or recommendations based on health conditions.
+    5. A brief explanation of the reasoning behind this plan, specifically how it helps achieve the Desired Goal and Target Weight at the requested intensity.
     
     IMPORTANT: Return all text descriptions (activity names, recommendations, reasoning, meal names) in ${lang === 'vi' ? 'Vietnamese' : 'English'}.
     
@@ -132,4 +137,32 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
   });
 
   return JSON.parse(response.text || "{}");
+};
+
+export const estimateCalories = async (mealDescription: string): Promise<number> => {
+  const model = "gemini-3-flash-preview";
+  const prompt = `Estimate the calories for this meal: "${mealDescription}". Return ONLY the number of calories as an integer. If you cannot estimate, return 0.`;
+  
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+  });
+
+  const calories = parseInt(response.text?.trim() || "0");
+  return isNaN(calories) ? 0 : calories;
+};
+
+export const suggestNextMeal = async (remainingCalories: number, goal: string, lang: string = 'en'): Promise<string> => {
+  const model = "gemini-3-flash-preview";
+  const prompt = `The user has ${remainingCalories} calories left for today. Their goal is "${goal}". 
+  Suggest a healthy next meal that fits within this calorie budget. 
+  Provide the suggestion in ${lang === 'vi' ? 'Vietnamese' : 'English'}. 
+  Keep it concise (1-2 sentences).`;
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+  });
+
+  return response.text || "";
 };

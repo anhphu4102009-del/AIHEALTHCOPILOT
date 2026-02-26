@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import Database from "better-sqlite3";
 import dotenv from "dotenv";
+import axios from "axios";
 
 dotenv.config();
 
@@ -26,6 +27,11 @@ try {
       activity_level TEXT,
       conditions TEXT,
       goal TEXT,
+      target_weight REAL,
+      workout_intensity TEXT DEFAULT 'medium',
+      strava_access_token TEXT,
+      strava_refresh_token TEXT,
+      strava_expires_at INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -57,6 +63,15 @@ try {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS daily_meals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      meal_name TEXT,
+      calories INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
   `);
 } catch (err) {
   console.error("Database initialization error:", err);
@@ -64,6 +79,15 @@ try {
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+
+// Health Check
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    env: process.env.NODE_ENV,
+    db: !!db 
+  });
+});
 
 // API Routes
 app.post("/api/auth/register", (req, res) => {
@@ -93,13 +117,125 @@ app.get("/api/user/:id", (req, res) => {
 });
 
 app.put("/api/user/:id/profile", (req, res) => {
-  const { age, gender, height, weight, activity_level, conditions, goal } = req.body;
+  const { age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity } = req.body;
   const stmt = db.prepare(`
     UPDATE users 
-    SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?, conditions = ?, goal = ?
+    SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?, conditions = ?, goal = ?, target_weight = ?, workout_intensity = ?
     WHERE id = ?
   `);
-  stmt.run(age, gender, height, weight, activity_level, conditions, goal, req.params.id);
+  stmt.run(age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity || 'medium', req.params.id);
+  res.json({ success: true });
+});
+
+// Strava OAuth
+app.get("/api/auth/strava/url", (req, res) => {
+  const clientId = process.env.STRAVA_CLIENT_ID;
+  const appUrl = process.env.APP_URL || `http://localhost:3000`;
+  const redirectUri = `${appUrl}/api/auth/strava/callback`;
+  
+  const params = new URLSearchParams({
+    client_id: clientId!,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'read,activity:read_all',
+    state: req.query.userId as string
+  });
+
+  res.json({ url: `https://www.strava.com/oauth/authorize?${params.toString()}` });
+});
+
+app.get("/api/auth/strava/callback", async (req, res) => {
+  const { code, state: userId } = req.query;
+  
+  try {
+    const response = await axios.post('https://www.strava.com/oauth/token', {
+      client_id: process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code'
+    });
+
+    const { access_token, refresh_token, expires_at } = response.data;
+
+    const stmt = db.prepare(`
+      UPDATE users 
+      SET strava_access_token = ?, strava_refresh_token = ?, strava_expires_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(access_token, refresh_token, expires_at, userId);
+
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'STRAVA_AUTH_SUCCESS' }, '*');
+              window.close();
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+          <p>Strava connected successfully! You can close this window.</p>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error("Strava OAuth error:", error);
+    res.status(500).send("Failed to connect Strava");
+  }
+});
+
+app.get("/api/strava/activities/:userId", async (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.userId);
+  if (!user || !user.strava_access_token) {
+    return res.status(404).json({ error: "Strava not connected" });
+  }
+
+  try {
+    // Check if token expired
+    let accessToken = user.strava_access_token;
+    if (Date.now() / 1000 > user.strava_expires_at) {
+      const refreshResponse = await axios.post('https://www.strava.com/oauth/token', {
+        client_id: process.env.STRAVA_CLIENT_ID,
+        client_secret: process.env.STRAVA_CLIENT_SECRET,
+        refresh_token: user.strava_refresh_token,
+        grant_type: 'refresh_token'
+      });
+      accessToken = refreshResponse.data.access_token;
+      const { refresh_token, expires_at } = refreshResponse.data;
+      
+      db.prepare(`
+        UPDATE users SET strava_access_token = ?, strava_refresh_token = ?, strava_expires_at = ? WHERE id = ?
+      `).run(accessToken, refresh_token, expires_at, user.id);
+    }
+
+    const activitiesResponse = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { per_page: 5 }
+    });
+
+    res.json(activitiesResponse.data);
+  } catch (error) {
+    console.error("Strava fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch Strava activities" });
+  }
+});
+
+// Daily Meals
+app.post("/api/meals", (req, res) => {
+  const { user_id, meal_name, calories } = req.body;
+  const stmt = db.prepare("INSERT INTO daily_meals (user_id, meal_name, calories) VALUES (?, ?, ?)");
+  stmt.run(user_id, meal_name, calories);
+  res.json({ success: true });
+});
+
+app.get("/api/meals/:userId", (req, res) => {
+  const meals = db.prepare("SELECT * FROM daily_meals WHERE user_id = ? AND date(created_at) = date('now') ORDER BY created_at DESC").all(req.params.userId);
+  res.json(meals);
+});
+
+app.delete("/api/meals/:id", (req, res) => {
+  db.prepare("DELETE FROM daily_meals WHERE id = ?").run(req.params.id);
   res.json({ success: true });
 });
 

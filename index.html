@@ -7,11 +7,33 @@
   </head>
   <body>
     <div id="root">
-      <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif;">
+      <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif;">
         <p>Loading AI Health Copilot...</p>
+        <p id="error-msg" style="color: red; font-size: 12px; margin-top: 10px;"></p>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      setTimeout(() => {
+        const root = document.getElementById('root');
+        if (root && root.innerHTML.includes('Loading AI Health Copilot...')) {
+          const errorMsg = document.getElementById('error-msg');
+          errorMsg.innerText = 'Taking too long? Check if the JS bundle loaded correctly.';
+          
+          // Diagnostic check
+          fetch('/api/health')
+            .then(r => r.json())
+            .then(data => {
+              console.log("API Health:", data);
+              errorMsg.innerText += ' (API is reachable)';
+            })
+            .catch(err => {
+              console.error("API Health Check failed:", err);
+              errorMsg.innerText += ' (API is unreachable)';
+            });
+        }
+      }, 5000);
+    </script>
   </body>
 </html>
 
