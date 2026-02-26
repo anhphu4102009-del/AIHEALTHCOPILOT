@@ -130,6 +130,14 @@ async function startServer() {
   // Strava OAuth
   app.get("/api/auth/strava/url", (req, res) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
+    const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ 
+        error: "Strava API keys are missing. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in AI Studio Secrets." 
+      });
+    }
+
     const origin = req.query.origin as string;
     const appUrl = (origin || process.env.APP_URL || `http://localhost:3000`).replace(/\/$/, "");
     const redirectUri = `${appUrl}/api/auth/strava/callback`;
