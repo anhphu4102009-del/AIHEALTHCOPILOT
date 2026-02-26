@@ -9,6 +9,11 @@ export interface User {
   activity_level?: string;
   conditions?: string;
   goal?: string;
+  target_weight?: number;
+  workout_intensity?: 'low' | 'medium' | 'high';
+  strava_access_token?: string;
+  strava_refresh_token?: string;
+  strava_expires_at?: number;
 }
 
 export interface HealthRecord {

@@ -17,8 +17,19 @@ window.addEventListener('error', (event) => {
   }
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+try {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+} catch (err) {
+  console.error("Render error:", err);
+  const root = document.getElementById('root');
+  if (root) {
+    root.innerHTML = `<div style="padding: 20px; color: red;">
+      <h2>Render Error</h2>
+      <pre>${err instanceof Error ? err.message : String(err)}</pre>
+    </div>`;
+  }
+}
