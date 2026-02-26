@@ -94,9 +94,13 @@ export default function App() {
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
-      const parsed = JSON.parse(savedUser);
-      setUser(parsed);
-      fetchUserData(parsed.id);
+      try {
+        const parsed = JSON.parse(savedUser);
+        setUser(parsed);
+        fetchUserData(parsed.id);
+      } catch (e) {
+        localStorage.removeItem('user');
+      }
     }
   }, []);
 

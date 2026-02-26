@@ -6,7 +6,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Vercel serverless functions write to /tmp
-const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/health_copilot.db' : 'health_copilot.db';
+const isProd = process.env.NODE_ENV === 'production';
+const dbPath = isProd ? '/tmp/health_copilot.db' : path.join(process.cwd(), 'health_copilot.db');
 const db = new Database(dbPath);
 
 // Initialize Database
