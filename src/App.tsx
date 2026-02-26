@@ -163,7 +163,8 @@ export default function App() {
   const handleConnectStrava = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/auth/strava/url?userId=${user.id}`);
+      const origin = window.location.origin;
+      const res = await fetch(`/api/auth/strava/url?userId=${user.id}&origin=${encodeURIComponent(origin)}`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const { url } = await res.json();
       window.open(url, 'strava_auth', 'width=600,height=700');

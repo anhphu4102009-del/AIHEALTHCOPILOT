@@ -130,8 +130,14 @@ async function startServer() {
   // Strava OAuth
   app.get("/api/auth/strava/url", (req, res) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
-    const appUrl = process.env.APP_URL || `http://localhost:3000`;
+    const origin = req.query.origin as string;
+    const appUrl = (origin || process.env.APP_URL || `http://localhost:3000`).replace(/\/$/, "");
     const redirectUri = `${appUrl}/api/auth/strava/callback`;
+    
+    console.log("Strava Auth Attempt:");
+    console.log("- Origin:", origin);
+    console.log("- Redirect URI:", redirectUri);
+    console.log("- Client ID:", clientId);
     
     const params = new URLSearchParams({
       client_id: clientId!,
