@@ -139,7 +139,10 @@ async function startServer() {
     }
 
     const origin = req.query.origin as string;
-    const appUrl = (origin || process.env.APP_URL || `http://localhost:3000`).replace(/\/$/, "");
+    // Prefer APP_URL from environment, fallback to origin from client, then localhost
+    let appUrl = process.env.APP_URL || origin || `http://localhost:3000`;
+    appUrl = appUrl.replace(/\/$/, ""); // Remove trailing slash
+    
     const redirectUri = `${appUrl}/api/auth/strava/callback`;
     
     console.log("Strava Auth Attempt:");
