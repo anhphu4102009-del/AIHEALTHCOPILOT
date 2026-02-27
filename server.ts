@@ -14,7 +14,9 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPE
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("health_copilot.db");
+const isVercel = process.env.VERCEL === '1';
+const dbPath = isVercel ? path.join('/tmp', 'health_copilot.db') : 'health_copilot.db';
+const db = new Database(dbPath);
 
 // Initialize Database
 db.exec(`
@@ -302,12 +304,12 @@ async function startServer() {
       stmt.run(user_id, type, contentString);
       res.json({ success: true });
     } catch (error: any) {
+      console.error("Error inserting plan:", error.message, error.stack);
       if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
         console.warn(`Plan save rejected: User ID ${user_id} does not exist.`);
         return res.status(400).json({ error: "User ID does not exist." });
       }
-      console.error("Error inserting plan:", error.message, error.stack);
-      res.status(500).json({ error: "Failed to save plan due to internal server error." });
+      res.status(500).json({ error: error.message || "Failed to save plan due to internal server error." });
     }
   });
 

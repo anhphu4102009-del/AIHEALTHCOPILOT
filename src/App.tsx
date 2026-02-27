@@ -884,28 +884,39 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {Array.isArray(latestPlan?.workoutPlan) ? latestPlan.workoutPlan.map((day: any, i: number) => (
-                  <div key={i} className="bg-white p-6 rounded-3xl card-shadow border border-slate-100">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">{day.day}</span>
-                      <div className="bg-emerald-50 p-2 rounded-lg">
-                        <CheckCircle2 size={16} className="text-emerald-600" />
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold">{lang === 'vi' ? 'Kế hoạch tập luyện' : 'Workout Plan'}</h3>
+                  <button 
+                    onClick={() => handleGeneratePlan()}
+                    className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-bold transition-colors"
+                  >
+                    <RotateCcw size={16} />
+                    {lang === 'vi' ? 'Làm mới kế hoạch' : 'Refresh Plan'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {Array.isArray(latestPlan?.workoutPlan) ? latestPlan.workoutPlan.map((day: any, i: number) => (
+                    <div key={i} className="bg-white p-6 rounded-3xl card-shadow border border-slate-100">
+                      <div className="flex justify-between items-center mb-4">
+                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">{day.day || (lang === 'vi' ? `Ngày ${i + 1}` : `Day ${i + 1}`)}</span>
+                        <div className="bg-emerald-50 p-2 rounded-lg">
+                          <CheckCircle2 size={16} className="text-emerald-600" />
+                        </div>
+                      </div>
+                      <h4 className="text-lg font-bold mb-2">{day.activity || day.exercise || day.name || (lang === 'vi' ? 'Bài tập' : 'Exercise')}</h4>
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        <div className="flex items-center gap-1">
+                          <Clock size={14} />
+                          <span>{day.duration || '--'}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Activity size={14} />
+                          <span>{day.intensity || '--'}</span>
+                        </div>
                       </div>
                     </div>
-                    <h4 className="text-lg font-bold mb-2">{day.activity}</h4>
-                    <div className="flex items-center gap-4 text-sm text-slate-500">
-                      <div className="flex items-center gap-1">
-                        <Clock size={14} />
-                        <span>{day.duration}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Activity size={14} />
-                        <span>{day.intensity}</span>
-                      </div>
-                    </div>
-                  </div>
-                )) : (
+                  )) : (
                   <div className="col-span-full text-center py-10 bg-white rounded-3xl border border-slate-100">
                     <p className="text-slate-400 mb-4">{t.noReports}</p>
                     <button 
