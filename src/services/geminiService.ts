@@ -106,6 +106,7 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
                 duration: { type: Type.STRING },
                 intensity: { type: Type.STRING },
               },
+              required: ["day", "activity", "duration", "intensity"],
             },
           },
           nutritionPlan: {
@@ -119,12 +120,14 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
                   carbs: { type: Type.STRING },
                   fats: { type: Type.STRING },
                 },
+                required: ["protein", "carbs", "fats"],
               },
               sampleMeals: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING },
               },
             },
+            required: ["dailyCalories", "macros", "sampleMeals"],
           },
           recommendations: {
             type: Type.ARRAY,
@@ -132,11 +135,24 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
           },
           reasoning: { type: Type.STRING },
         },
+        required: ["workoutPlan", "nutritionPlan", "recommendations", "reasoning"],
       },
     },
   });
 
-  return JSON.parse(response.text || "{}");
+  let text = response.text || "{}";
+  if (text.startsWith("```json")) {
+    text = text.replace(/^```json\n/, "").replace(/\n```$/, "");
+  } else if (text.startsWith("```")) {
+    text = text.replace(/^```\n/, "").replace(/\n```$/, "");
+  }
+  
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error("Failed to parse JSON:", text);
+    throw e;
+  }
 };
 
 export const estimateCalories = async (mealDescription: string): Promise<number> => {

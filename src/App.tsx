@@ -215,6 +215,51 @@ export default function App() {
     }
   };
 
+  const handleGeneratePlan = async () => {
+    if (!user) return;
+    if (!user.age || !user.weight || !user.height) {
+      alert(lang === 'vi' ? 'Vui lòng cập nhật thông tin cá nhân (tuổi, chiều cao, cân nặng) trước khi tạo kế hoạch.' : 'Please update your profile (age, height, weight) before generating a plan.');
+      setActiveTab('settings');
+      return;
+    }
+    setLoading(true);
+    try {
+      console.log("Generating plan for user:", user);
+      const plan = await generateHealthPlan({
+        age: user.age,
+        gender: user.gender || 'Other',
+        height: user.height,
+        weight: user.weight,
+        targetWeight: user.target_weight || user.weight,
+        workoutIntensity: user.workout_intensity || 'medium',
+        activityLevel: user.activity_level || 'Moderate',
+        conditions: user.conditions?.split(',') || [],
+        goal: user.goal || 'General Health'
+      }, lang);
+
+      console.log("Generated plan:", plan);
+
+      const res = await fetch('/api/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          type: 'comprehensive',
+          content: plan
+        })
+      });
+      
+      console.log("Save plan response:", await res.json());
+
+      fetchUserData(user.id);
+    } catch (e) {
+      console.error("Error in handleGeneratePlan:", e);
+      alert(lang === 'vi' ? 'Không thể tạo kế hoạch.' : 'Failed to generate plan.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -700,8 +745,8 @@ export default function App() {
                         </div>
                         <div>
                           <p className="text-sm text-slate-500 font-medium">{t.workout}</p>
-                          <p className="font-bold">{latestPlan.workoutPlan[0]?.activity || 'Rest Day'}</p>
-                          <p className="text-xs text-slate-400">{latestPlan.workoutPlan[0]?.duration || '--'}</p>
+                          <p className="font-bold">{latestPlan.workoutPlan?.[0]?.activity || 'Rest Day'}</p>
+                          <p className="text-xs text-slate-400">{latestPlan.workoutPlan?.[0]?.duration || '--'}</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-4">
@@ -728,10 +773,11 @@ export default function App() {
                     <div className="text-center py-10">
                       <p className="text-slate-400 mb-4">{t.noReports}</p>
                       <button 
-                        onClick={() => setActiveTab('metrics')}
-                        className="text-emerald-600 font-bold hover:underline"
+                        onClick={handleGeneratePlan}
+                        disabled={loading}
+                        className="text-emerald-600 font-bold hover:underline disabled:opacity-50"
                       >
-                        {t.completeProfile}
+                        {loading ? t.processing : (lang === 'vi' ? 'Tạo kế hoạch từ hồ sơ' : 'Generate Plan from Profile')}
                       </button>
                     </div>
                   )}
@@ -774,7 +820,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {latestPlan?.workoutPlan.map((day: any, i: number) => (
+                {latestPlan?.workoutPlan ? latestPlan.workoutPlan.map((day: any, i: number) => (
                   <div key={i} className="bg-white p-6 rounded-3xl card-shadow border border-slate-100">
                     <div className="flex justify-between items-center mb-4">
                       <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">{day.day}</span>
@@ -794,7 +840,18 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="col-span-full text-center py-10 bg-white rounded-3xl border border-slate-100">
+                    <p className="text-slate-400 mb-4">{t.noReports}</p>
+                    <button 
+                      onClick={handleGeneratePlan}
+                      disabled={loading}
+                      className="text-emerald-600 font-bold hover:underline disabled:opacity-50"
+                    >
+                      {loading ? t.processing : (lang === 'vi' ? 'Tạo kế hoạch từ hồ sơ' : 'Generate Plan from Profile')}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="bg-emerald-900 text-white p-8 rounded-3xl shadow-xl">
@@ -802,9 +859,18 @@ export default function App() {
                   <AlertCircle size={24} />
                   {t.aiReasoning}
                 </h4>
-                <p className="text-emerald-100 leading-relaxed">
+                <p className="text-emerald-100 leading-relaxed mb-4">
                   {latestPlan?.reasoning || t.noReports}
                 </p>
+                {!latestPlan && (
+                  <button 
+                    onClick={handleGeneratePlan}
+                    disabled={loading}
+                    className="bg-emerald-800 text-white px-6 py-2 rounded-xl font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
+                  >
+                    {loading ? t.processing : (lang === 'vi' ? 'Tạo kế hoạch từ hồ sơ' : 'Generate Plan from Profile')}
+                  </button>
+                )}
               </div>
 
               {stravaActivities.length > 0 && (
@@ -973,7 +1039,7 @@ export default function App() {
                   <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
                     <h3 className="text-xl font-bold mb-6">{t.sampleMeals}</h3>
                     <div className="space-y-4">
-                      {latestPlan?.nutritionPlan.sampleMeals.map((meal: string, i: number) => (
+                      {latestPlan?.nutritionPlan.sampleMeals ? latestPlan.nutritionPlan.sampleMeals.map((meal: string, i: number) => (
                         <div key={i} className="flex items-center gap-6 p-4 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
                           <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center shrink-0">
                             <Utensils className="text-emerald-600" size={24} />
@@ -983,19 +1049,32 @@ export default function App() {
                             <p className="font-bold text-slate-800">{meal}</p>
                           </div>
                         </div>
-                      ))}
+                      )) : (
+                        <div className="text-center py-6">
+                          <p className="text-slate-400 mb-4">{t.noReports}</p>
+                          <button 
+                            onClick={handleGeneratePlan}
+                            disabled={loading}
+                            className="text-emerald-600 font-bold hover:underline disabled:opacity-50"
+                          >
+                            {loading ? t.processing : (lang === 'vi' ? 'Tạo kế hoạch từ hồ sơ' : 'Generate Plan from Profile')}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
                     <h3 className="text-xl font-bold mb-4">{t.recommendations}</h3>
                     <ul className="space-y-3">
-                      {latestPlan?.recommendations.map((rec: string, i: number) => (
+                      {latestPlan?.recommendations ? latestPlan.recommendations.map((rec: string, i: number) => (
                         <li key={i} className="flex gap-3 text-sm text-slate-600">
                           <ChevronRight className="text-emerald-500 shrink-0" size={18} />
                           <span>{rec}</span>
                         </li>
-                      ))}
+                      )) : (
+                        <li className="text-slate-400 italic">{t.noReports}</li>
+                      )}
                     </ul>
                   </div>
                 </div>

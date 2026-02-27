@@ -117,14 +117,30 @@ async function startServer() {
   });
 
   app.put("/api/user/:id/profile", (req, res) => {
+    console.log("Received profile update for user:", req.params.id);
+    console.log("Request body:", req.body);
+
     const { age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity } = req.body;
-    const stmt = db.prepare(`
-      UPDATE users 
-      SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?, conditions = ?, goal = ?, target_weight = ?, workout_intensity = ?
-      WHERE id = ?
-    `);
-    stmt.run(age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity || 'medium', req.params.id);
-    res.json({ success: true });
+    
+    if (age === undefined || gender === undefined || height === undefined || weight === undefined) {
+      console.error("Validation Error: Missing required profile fields");
+      return res.status(400).json({ error: "Missing required profile fields" });
+    }
+
+    try {
+      const stmt = db.prepare(`
+        UPDATE users 
+        SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?, conditions = ?, goal = ?, target_weight = ?, workout_intensity = ?
+        WHERE id = ?
+      `);
+      stmt.run(age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity || 'medium', req.params.id);
+      
+      console.log("Profile updated successfully for user:", req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Database Error during profile update:", e);
+      res.status(500).json({ error: "Failed to update profile in database" });
+    }
   });
 
   // Strava OAuth
@@ -277,7 +293,15 @@ async function startServer() {
 
   app.get("/api/plans/:userId", (req, res) => {
     const plans = db.prepare("SELECT * FROM plans WHERE user_id = ? ORDER BY created_at DESC").all(req.params.userId);
-    res.json(plans.map(p => ({ ...p, content: JSON.parse(p.content) })));
+    res.json(plans.map(p => {
+      let content = {};
+      try {
+        content = JSON.parse(p.content);
+      } catch (e) {
+        console.error("Failed to parse plan content:", p.content);
+      }
+      return { ...p, content };
+    }));
   });
 
   app.post("/api/progress", (req, res) => {
