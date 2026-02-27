@@ -286,9 +286,17 @@ async function startServer() {
 
   app.post("/api/plans", (req, res) => {
     const { user_id, type, content } = req.body;
-    const stmt = db.prepare("INSERT INTO plans (user_id, type, content) VALUES (?, ?, ?)");
-    stmt.run(user_id, type, JSON.stringify(content));
-    res.json({ success: true });
+    try {
+      const stmt = db.prepare("INSERT INTO plans (user_id, type, content) VALUES (?, ?, ?)");
+      stmt.run(user_id, type, JSON.stringify(content));
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+        return res.status(400).json({ error: "User ID does not exist." });
+      }
+      console.error("Error inserting plan:", error);
+      res.status(500).json({ error: "Failed to save plan." });
+    }
   });
 
   app.get("/api/plans/:userId", (req, res) => {

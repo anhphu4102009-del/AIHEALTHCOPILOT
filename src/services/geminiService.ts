@@ -67,6 +67,63 @@ export const analyzeMedicalReport = async (base64Image: string, lang: string = '
   return JSON.parse(response.text || "{}");
 };
 
+export const generateFallbackPlan = (profile: any, lang: string) => {
+  const bmr = profile.gender === 'Male' 
+    ? 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + 5
+    : 10 * profile.weight + 6.25 * profile.height - 5 * profile.age - 161;
+
+  const activityMultipliers: any = {
+    'Sedentary': 1.2,
+    'Light': 1.375,
+    'Moderate': 1.55,
+    'Active': 1.725,
+    'Very Active': 1.9
+  };
+  const tdee = bmr * (activityMultipliers[profile.activityLevel] || 1.2);
+
+  let dailyCalories = Math.round(tdee);
+  if (profile.goal?.toLowerCase().includes('lose') || profile.targetWeight < profile.weight) {
+    dailyCalories -= 500;
+  } else if (profile.goal?.toLowerCase().includes('gain') || profile.targetWeight > profile.weight) {
+    dailyCalories += 500;
+  }
+
+  const protein = Math.round((dailyCalories * 0.3) / 4);
+  const carbs = Math.round((dailyCalories * 0.4) / 4);
+  const fats = Math.round((dailyCalories * 0.3) / 9);
+
+  const isVi = lang === 'vi';
+
+  return {
+    workoutPlan: [
+      { day: isVi ? "Thứ 2" : "Monday", activity: isVi ? "Cardio nhẹ" : "Light Cardio", duration: "30 min", intensity: "Low" },
+      { day: isVi ? "Thứ 3" : "Tuesday", activity: isVi ? "Tập sức mạnh" : "Strength Training", duration: "45 min", intensity: "Medium" },
+      { day: isVi ? "Thứ 4" : "Wednesday", activity: isVi ? "Nghỉ ngơi" : "Rest", duration: "-", intensity: "-" },
+      { day: isVi ? "Thứ 5" : "Thursday", activity: isVi ? "Cardio cường độ cao" : "HIIT", duration: "20 min", intensity: "High" },
+      { day: isVi ? "Thứ 6" : "Friday", activity: isVi ? "Tập sức mạnh" : "Strength Training", duration: "45 min", intensity: "Medium" },
+      { day: isVi ? "Thứ 7" : "Saturday", activity: isVi ? "Hoạt động ngoài trời" : "Outdoor Activity", duration: "60 min", intensity: "Medium" },
+      { day: isVi ? "Chủ nhật" : "Sunday", activity: isVi ? "Yoga / Giãn cơ" : "Yoga / Stretching", duration: "30 min", intensity: "Low" }
+    ],
+    nutritionPlan: {
+      dailyCalories,
+      macros: {
+        protein: `${protein}g`,
+        carbs: `${carbs}g`,
+        fats: `${fats}g`
+      },
+      sampleMeals: isVi 
+        ? ["Sáng: Yến mạch với trái cây", "Trưa: Cơm gạo lứt, ức gà, rau luộc", "Tối: Cá hồi áp chảo, salad"]
+        : ["Breakfast: Oatmeal with fruits", "Lunch: Brown rice, chicken breast, steamed veggies", "Dinner: Grilled salmon, salad"]
+    },
+    recommendations: isVi 
+      ? ["Uống đủ 2 lít nước mỗi ngày", "Ngủ đủ 7-8 tiếng", "Theo dõi cân nặng hàng tuần"]
+      : ["Drink 2L of water daily", "Get 7-8 hours of sleep", "Track weight weekly"],
+    reasoning: isVi
+      ? `Kế hoạch được tính toán dựa trên chỉ số BMR (${Math.round(bmr)} kcal) và TDEE (${Math.round(tdee)} kcal) của bạn để đạt mục tiêu ${profile.goal || 'sức khỏe'}.`
+      : `Plan calculated based on your BMR (${Math.round(bmr)} kcal) and TDEE (${Math.round(tdee)} kcal) to achieve your goal of ${profile.goal || 'health'}.`
+  };
+};
+
 export const generateHealthPlan = async (profile: HealthProfile, lang: string = 'en'): Promise<any> => {
   const model = "gemini-3.1-pro-preview";
   const prompt = `
@@ -88,70 +145,70 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
     Return the response in a structured JSON format.
   `;
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          workoutPlan: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                day: { type: Type.STRING },
-                activity: { type: Type.STRING },
-                duration: { type: Type.STRING },
-                intensity: { type: Type.STRING },
-              },
-              required: ["day", "activity", "duration", "intensity"],
-            },
-          },
-          nutritionPlan: {
-            type: Type.OBJECT,
-            properties: {
-              dailyCalories: { type: Type.NUMBER },
-              macros: {
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            workoutPlan: {
+              type: Type.ARRAY,
+              items: {
                 type: Type.OBJECT,
                 properties: {
-                  protein: { type: Type.STRING },
-                  carbs: { type: Type.STRING },
-                  fats: { type: Type.STRING },
+                  day: { type: Type.STRING },
+                  activity: { type: Type.STRING },
+                  duration: { type: Type.STRING },
+                  intensity: { type: Type.STRING },
                 },
-                required: ["protein", "carbs", "fats"],
-              },
-              sampleMeals: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
+                required: ["day", "activity", "duration", "intensity"],
               },
             },
-            required: ["dailyCalories", "macros", "sampleMeals"],
+            nutritionPlan: {
+              type: Type.OBJECT,
+              properties: {
+                dailyCalories: { type: Type.NUMBER },
+                macros: {
+                  type: Type.OBJECT,
+                  properties: {
+                    protein: { type: Type.STRING },
+                    carbs: { type: Type.STRING },
+                    fats: { type: Type.STRING },
+                  },
+                  required: ["protein", "carbs", "fats"],
+                },
+                sampleMeals: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+              },
+              required: ["dailyCalories", "macros", "sampleMeals"],
+            },
+            recommendations: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            reasoning: { type: Type.STRING },
           },
-          recommendations: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-          },
-          reasoning: { type: Type.STRING },
+          required: ["workoutPlan", "nutritionPlan", "recommendations", "reasoning"],
         },
-        required: ["workoutPlan", "nutritionPlan", "recommendations", "reasoning"],
       },
-    },
-  });
+    });
 
-  let text = response.text || "{}";
-  if (text.startsWith("```json")) {
-    text = text.replace(/^```json\n/, "").replace(/\n```$/, "");
-  } else if (text.startsWith("```")) {
-    text = text.replace(/^```\n/, "").replace(/\n```$/, "");
-  }
-  
-  try {
+    let text = response.text || "{}";
+    if (text.startsWith("```json")) {
+      text = text.replace(/^```json\n/, "").replace(/\n```$/, "");
+    } else if (text.startsWith("```")) {
+      text = text.replace(/^```\n/, "").replace(/\n```$/, "");
+    }
+    
     return JSON.parse(text);
-  } catch (e) {
-    console.error("Failed to parse JSON:", text);
-    throw e;
+  } catch (error) {
+    console.warn("Gemini API failed or quota exceeded. Falling back to local calculation.", error);
+    return generateFallbackPlan(profile, lang);
   }
 };
 

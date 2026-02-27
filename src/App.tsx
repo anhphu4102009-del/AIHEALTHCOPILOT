@@ -130,13 +130,33 @@ export default function App() {
         fetch(`/api/meals/${userId}`)
       ]);
       
-      if (recordsRes.ok) setRecords(await recordsRes.json());
-      if (plansRes.ok) setPlans(await plansRes.json());
-      if (progressRes.ok) setProgress(await progressRes.json());
-      if (mealsRes.ok) setDailyMeals(await mealsRes.json());
+      const parseJsonSafely = async (response: Response) => {
+        if (!response.ok) {
+          console.error(`API call failed with status ${response.status}: ${response.url}`);
+          return null;
+        }
+        try {
+          return await response.json();
+        } catch (e) {
+          console.error(`Failed to parse JSON from ${response.url}:`, e);
+          return null;
+        }
+      };
+
+      const recordsData = await parseJsonSafely(recordsRes);
+      if (recordsData) setRecords(recordsData);
       
-      if (userRes.ok) {
-        const userData = await userRes.json();
+      const fetchedPlans = await parseJsonSafely(plansRes) || [];
+      setPlans(fetchedPlans);
+
+      const progressData = await parseJsonSafely(progressRes);
+      if (progressData) setProgress(progressData);
+
+      const mealsData = await parseJsonSafely(mealsRes);
+      if (mealsData) setDailyMeals(mealsData);
+      
+      const userData = await parseJsonSafely(userRes);
+      if (userData) {
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
 
@@ -145,9 +165,6 @@ export default function App() {
         }
 
         // Auto-generate plan if no plans exist and profile is complete
-        const fetchedPlans = await plansRes.json();
-        setPlans(fetchedPlans);
-
         if (fetchedPlans.length === 0 && userData.age && userData.weight && userData.height) {
           console.log("No plans found, auto-generating plan...");
           await handleGeneratePlan();
@@ -225,7 +242,11 @@ export default function App() {
   };
 
   const handleGeneratePlan = async () => {
-    if (!user) return;
+    if (!user || !user.id) {
+      console.error("User or User ID is missing, cannot generate plan.");
+      alert(lang === 'vi' ? 'Không tìm thấy thông tin người dùng, không thể tạo kế hoạch.' : 'User information missing, cannot generate plan.');
+      return;
+    }
     if (!user.age || !user.weight || !user.height) {
       alert(lang === 'vi' ? 'Vui lòng cập nhật thông tin cá nhân (tuổi, chiều cao, cân nặng) trước khi tạo kế hoạch.' : 'Please update your profile (age, height, weight) before generating a plan.');
       setActiveTab('settings');
@@ -258,7 +279,16 @@ export default function App() {
         })
       });
       
-      console.log("Save plan response:", await res.json());
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Failed to save plan, server response:", res.status, errorText);
+        alert(lang === 'vi' ? `Lỗi khi lưu kế hoạch: ${errorText}` : `Failed to save plan: ${errorText}`);
+        setLoading(false);
+        return;
+      }
+
+      const savePlanResponse = await res.json();
+      console.log("Save plan response:", savePlanResponse);
 
       fetchUserData(user.id);
     } catch (e) {
