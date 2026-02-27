@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import Database from "better-sqlite3";
+import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import axios from "axios";
 import OpenAI from "openai";
@@ -11,73 +11,12 @@ dotenv.config();
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseKey = process.env.SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const isVercel = process.env.VERCEL === '1';
-const dbPath = isVercel ? path.join('/tmp', 'health_copilot.db') : 'health_copilot.db';
-const db = new Database(dbPath);
-
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT,
-    name TEXT,
-    age INTEGER,
-    gender TEXT,
-    height REAL,
-    weight REAL,
-    activity_level TEXT,
-    conditions TEXT,
-    goal TEXT,
-    target_weight REAL,
-    workout_intensity TEXT DEFAULT 'medium',
-    strava_access_token TEXT,
-    strava_refresh_token TEXT,
-    strava_expires_at INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS health_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    report_data TEXT,
-    summary TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS plans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    type TEXT,
-    content TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS progress_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    weight REAL,
-    mood TEXT,
-    energy_level INTEGER,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS daily_meals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    meal_name TEXT,
-    calories INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-`);
 
 async function startServer() {
   const app = express();
@@ -90,64 +29,71 @@ async function startServer() {
     res.json({ 
       status: "ok", 
       env: process.env.NODE_ENV,
-      db: !!db 
+      supabase: !!supabaseUrl && !!supabaseKey
     });
   });
 
   // API Routes
-  app.post("/api/auth/register", (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
     const { email, password, name } = req.body;
     try {
-      const stmt = db.prepare("INSERT INTO users (email, password, name) VALUES (?, ?, ?)");
-      const info = stmt.run(email, password, name);
-      res.json({ id: info.lastInsertRowid, email, name });
-    } catch (e) {
-      res.status(400).json({ error: "Email already exists" });
+      const { data, error } = await supabase
+        .from('users')
+        .insert([{ email, password, name }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      res.json(data);
+    } catch (e: any) {
+      console.error("Registration error:", e);
+      res.status(400).json({ error: e.message || "Email already exists" });
     }
   });
 
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
-    const user = db.prepare("SELECT * FROM users WHERE email = ? AND password = ?").get(email, password);
-    if (user) {
-      res.json(user);
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .single();
+
+    if (data) {
+      res.json(data);
     } else {
       res.status(401).json({ error: "Invalid credentials" });
     }
   });
 
-  app.get("/api/user/:id", (req, res) => {
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
-    if (!user) {
+  app.get("/api/user/:id", async (req, res) => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!data) {
       return res.status(404).json({ error: "User not found" });
     }
-    res.json(user);
+    res.json(data);
   });
 
-  app.put("/api/user/:id/profile", (req, res) => {
-    console.log("Received profile update for user:", req.params.id);
-    console.log("Request body:", req.body);
-
+  app.put("/api/user/:id/profile", async (req, res) => {
     const { age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity } = req.body;
     
-    if (age === undefined || gender === undefined || height === undefined || weight === undefined) {
-      console.error("Validation Error: Missing required profile fields");
-      return res.status(400).json({ error: "Missing required profile fields" });
-    }
-
     try {
-      const stmt = db.prepare(`
-        UPDATE users 
-        SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?, conditions = ?, goal = ?, target_weight = ?, workout_intensity = ?
-        WHERE id = ?
-      `);
-      stmt.run(age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity || 'medium', req.params.id);
+      const { data, error } = await supabase
+        .from('users')
+        .update({ age, gender, height, weight, activity_level, conditions, goal, target_weight, workout_intensity: workout_intensity || 'medium' })
+        .eq('id', req.params.id);
       
-      console.log("Profile updated successfully for user:", req.params.id);
+      if (error) throw error;
       res.json({ success: true });
-    } catch (e) {
-      console.error("Database Error during profile update:", e);
-      res.status(500).json({ error: "Failed to update profile in database" });
+    } catch (e: any) {
+      console.error("Profile update error:", e);
+      res.status(500).json({ error: e.message || "Failed to update profile" });
     }
   });
 
@@ -158,21 +104,15 @@ async function startServer() {
 
     if (!clientId || !clientSecret) {
       return res.status(400).json({ 
-        error: "Strava API credentials are missing. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in Secrets." 
+        error: "Strava API credentials are missing." 
       });
     }
 
     const origin = req.query.origin as string;
-    // Prefer APP_URL from environment, fallback to origin from client, then localhost
     let appUrl = process.env.APP_URL || origin || `http://localhost:3000`;
-    appUrl = appUrl.replace(/\/$/, ""); // Remove trailing slash
+    appUrl = appUrl.replace(/\/$/, "");
     
     const redirectUri = `${appUrl}/api/auth/strava/callback`;
-    
-    console.log("Strava Auth Attempt:");
-    console.log("- Origin:", origin);
-    console.log("- Redirect URI:", redirectUri);
-    console.log("- Client ID:", clientId);
     
     const params = new URLSearchParams({
       client_id: clientId!,
@@ -198,12 +138,12 @@ async function startServer() {
 
       const { access_token, refresh_token, expires_at } = response.data;
 
-      const stmt = db.prepare(`
-        UPDATE users 
-        SET strava_access_token = ?, strava_refresh_token = ?, strava_expires_at = ?
-        WHERE id = ?
-      `);
-      stmt.run(access_token, refresh_token, expires_at, userId);
+      const { error } = await supabase
+        .from('users')
+        .update({ strava_access_token: access_token, strava_refresh_token: refresh_token, strava_expires_at: expires_at })
+        .eq('id', userId);
+
+      if (error) throw error;
 
       res.send(`
         <html>
@@ -216,7 +156,7 @@ async function startServer() {
                 window.location.href = '/';
               }
             </script>
-            <p>Strava connected successfully! You can close this window.</p>
+            <p>Strava connected successfully!</p>
           </body>
         </html>
       `);
@@ -227,13 +167,17 @@ async function startServer() {
   });
 
   app.get("/api/strava/activities/:userId", async (req, res) => {
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.userId);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.params.userId)
+      .single();
+
     if (!user || !user.strava_access_token) {
       return res.status(404).json({ error: "Strava not connected" });
     }
 
     try {
-      // Check if token expired
       let accessToken = user.strava_access_token;
       if (Date.now() / 1000 > user.strava_expires_at) {
         const refreshResponse = await axios.post('https://www.strava.com/oauth/token', {
@@ -245,9 +189,10 @@ async function startServer() {
         accessToken = refreshResponse.data.access_token;
         const { refresh_token, expires_at } = refreshResponse.data;
         
-        db.prepare(`
-          UPDATE users SET strava_access_token = ?, strava_refresh_token = ?, strava_expires_at = ? WHERE id = ?
-        `).run(accessToken, refresh_token, expires_at, user.id);
+        await supabase
+          .from('users')
+          .update({ strava_access_token: accessToken, strava_refresh_token: refresh_token, strava_expires_at: expires_at })
+          .eq('id', user.id);
       }
 
       const activitiesResponse = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
@@ -263,125 +208,127 @@ async function startServer() {
   });
 
   // Daily Meals
-  app.post("/api/meals", (req, res) => {
+  app.post("/api/meals", async (req, res) => {
     const { user_id, meal_name, calories } = req.body;
-    const stmt = db.prepare("INSERT INTO daily_meals (user_id, meal_name, calories) VALUES (?, ?, ?)");
-    stmt.run(user_id, meal_name, calories);
+    const { error } = await supabase
+      .from('daily_meals')
+      .insert([{ user_id, meal_name, calories }]);
+    
+    if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
 
-  app.get("/api/meals/:userId", (req, res) => {
-    const meals = db.prepare("SELECT * FROM daily_meals WHERE user_id = ? AND date(created_at) = date('now') ORDER BY created_at DESC").all(req.params.userId);
-    res.json(meals);
+  app.get("/api/meals/:userId", async (req, res) => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await supabase
+      .from('daily_meals')
+      .select('*')
+      .eq('user_id', req.params.userId)
+      .gte('created_at', `${today}T00:00:00Z`)
+      .lte('created_at', `${today}T23:59:59Z`)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
   });
 
-  app.delete("/api/meals/:id", (req, res) => {
-    db.prepare("DELETE FROM daily_meals WHERE id = ?").run(req.params.id);
+  app.delete("/api/meals/:id", async (req, res) => {
+    const { error } = await supabase
+      .from('daily_meals')
+      .delete()
+      .eq('id', req.params.id);
+    
+    if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
 
-  app.post("/api/health/record", (req, res) => {
+  app.post("/api/health/record", async (req, res) => {
     const { user_id, report_data, summary } = req.body;
-    const stmt = db.prepare("INSERT INTO health_records (user_id, report_data, summary) VALUES (?, ?, ?)");
-    stmt.run(user_id, JSON.stringify(report_data), summary);
+    const { error } = await supabase
+      .from('health_records')
+      .insert([{ user_id, report_data, summary }]);
+    
+    if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
 
-  app.get("/api/health/records/:userId", (req, res) => {
-    const records = db.prepare("SELECT * FROM health_records WHERE user_id = ? ORDER BY created_at DESC").all(req.params.userId);
-    res.json(records.map(r => ({ ...r, report_data: JSON.parse(r.report_data) })));
+  app.get("/api/health/records/:userId", async (req, res) => {
+    const { data, error } = await supabase
+      .from('health_records')
+      .select('*')
+      .eq('user_id', req.params.userId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
   });
 
-  app.post("/api/plans", (req, res) => {
+  app.post("/api/plans", async (req, res) => {
     const { user_id, type, content } = req.body;
-    if (!user_id || !type || !content) {
-      return res.status(400).json({ error: "Missing user_id, type, or content." });
-    }
     try {
-      // Ensure content is a stringified JSON
-      const contentString = typeof content === 'string' ? content : JSON.stringify(content);
-      const stmt = db.prepare("INSERT INTO plans (user_id, type, content) VALUES (?, ?, ?)");
-      stmt.run(user_id, type, contentString);
+      const { error } = await supabase
+        .from('plans')
+        .insert([{ user_id, type, content }]);
+      
+      if (error) throw error;
       res.json({ success: true });
-    } catch (error: any) {
-      console.error("Error inserting plan:", error.message, error.stack);
-      if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-        console.warn(`Plan save rejected: User ID ${user_id} does not exist.`);
-        return res.status(400).json({ error: "User ID does not exist." });
-      }
-      res.status(500).json({ error: error.message || "Failed to save plan due to internal server error." });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
-  app.get("/api/plans/:userId", (req, res) => {
-    const plans = db.prepare("SELECT * FROM plans WHERE user_id = ? ORDER BY created_at DESC").all(req.params.userId);
-    res.json(plans.map(p => {
-      let content = {};
-      try {
-        content = JSON.parse(p.content);
-      } catch (e) {
-        console.error("Failed to parse plan content:", p.content);
-      }
-      return { ...p, content };
-    }));
+  app.get("/api/plans/:userId", async (req, res) => {
+    const { data, error } = await supabase
+      .from('plans')
+      .select('*')
+      .eq('user_id', req.params.userId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
   });
 
-  app.post("/api/progress", (req, res) => {
+  app.post("/api/progress", async (req, res) => {
     const { user_id, weight, mood, energy_level, notes } = req.body;
-    const stmt = db.prepare("INSERT INTO progress_logs (user_id, weight, mood, energy_level, notes) VALUES (?, ?, ?, ?, ?)");
-    stmt.run(user_id, weight, mood, energy_level, notes);
+    const { error } = await supabase
+      .from('progress_logs')
+      .insert([{ user_id, weight, mood, energy_level, notes }]);
+    
+    if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   });
 
-  app.get("/api/progress/:userId", (req, res) => {
-    const logs = db.prepare("SELECT * FROM progress_logs WHERE user_id = ? ORDER BY created_at DESC").all(req.params.userId);
-    res.json(logs);
+  app.get("/api/progress/:userId", async (req, res) => {
+    const { data, error } = await supabase
+      .from('progress_logs')
+      .select('*')
+      .eq('user_id', req.params.userId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
   });
 
-  // AI Proxy for OpenAI (to keep API key secure)
   app.post("/api/ai/chat", async (req, res) => {
-    if (!openai) {
-      return res.status(400).json({ error: "OpenAI API key not configured on server." });
-    }
-
+    if (!openai) return res.status(400).json({ error: "OpenAI not configured" });
     const { messages, model = "gpt-4o-mini", response_format } = req.body;
-
     try {
-      // Ensure we use a model that supports vision if images are present
-      const selectedModel = messages.some((m: any) => 
-        Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
-      ) ? "gpt-4o-mini" : model;
-
-      const completion = await openai.chat.completions.create({
-        model: selectedModel,
-        messages,
-        response_format
-      });
-
+      const completion = await openai.chat.completions.create({ model, messages, response_format });
       res.json(completion.choices[0].message);
     } catch (error: any) {
-      console.error("OpenAI Error:", error);
-      res.status(500).json({ error: error.message || "Failed to call OpenAI" });
+      res.status(500).json({ error: error.message });
     }
   });
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+    app.get("*", (req, res) => res.sendFile(path.join(__dirname, "dist", "index.html")));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
 }
 
 startServer();
