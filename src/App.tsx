@@ -143,6 +143,15 @@ export default function App() {
         if (userData.strava_access_token) {
           fetchStravaActivities(userId);
         }
+
+        // Auto-generate plan if no plans exist and profile is complete
+        const fetchedPlans = await plansRes.json();
+        setPlans(fetchedPlans);
+
+        if (fetchedPlans.length === 0 && userData.age && userData.weight && userData.height) {
+          console.log("No plans found, auto-generating plan...");
+          await handleGeneratePlan();
+        }
       }
     } catch (e) {
       console.error("Failed to fetch data", e);
@@ -1169,32 +1178,13 @@ export default function App() {
                         body: JSON.stringify(profile)
                       });
                       
-                      // Auto-generate plan
-                      const plan = await generateHealthPlan({
-                        age: profile.age,
-                        gender: profile.gender,
-                        height: profile.height,
-                        weight: profile.weight,
-                        targetWeight: profile.target_weight,
-                        workoutIntensity: profile.workout_intensity,
-                        activityLevel: profile.activity_level,
-                        conditions: profile.conditions?.split(',') || [],
-                        goal: profile.goal
-                      }, lang);
-
-                      await fetch('/api/plans', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          user_id: user.id,
-                          type: 'comprehensive',
-                          content: plan
-                        })
-                      });
-
                       setUser({ ...user, ...profile });
                       fetchUserData(user.id);
                       alert(t.profileUpdated);
+
+                      // Auto-generate plan
+                      await handleGeneratePlan();
+
                     } catch (e) {
                       console.error(e);
                     } finally {
@@ -1317,32 +1307,8 @@ export default function App() {
                       fetchUserData(user.id);
 
                       // Auto-generate plan in background
-                      try {
-                        const plan = await generateHealthPlan({
-                          age: profile.age,
-                          gender: profile.gender,
-                          height: profile.height,
-                          weight: profile.weight,
-                          targetWeight: profile.target_weight,
-                          workoutIntensity: profile.workout_intensity,
-                          activityLevel: profile.activity_level,
-                          conditions: profile.conditions?.split(',') || [],
-                          goal: profile.goal
-                        }, lang);
+                      await handleGeneratePlan();
 
-                        await fetch('/api/plans', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            user_id: user.id,
-                            type: 'comprehensive',
-                            content: plan
-                          })
-                        });
-                        fetchUserData(user.id);
-                      } catch (planError) {
-                        console.error("Plan generation failed:", planError);
-                      }
                     } catch (e) {
                       console.error("Profile update failed:", e);
                       alert("Failed to update profile. Please try again.");
