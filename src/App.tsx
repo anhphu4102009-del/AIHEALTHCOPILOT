@@ -14,7 +14,9 @@ import {
   ChevronRight,
   CheckCircle2,
   Clock,
-  Dumbbell
+  Dumbbell,
+  Menu,
+  RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -34,17 +36,17 @@ import { translations, Language } from './translations';
 
 // --- Components ---
 
-const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active: boolean, onClick: () => void }) => (
+const SidebarItem = ({ icon: Icon, label, active, onClick, collapsed }: { icon: any, label: string, active: boolean, onClick: () => void, collapsed?: boolean }) => (
   <button 
     onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+    className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all duration-200 ${
       active 
         ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' 
         : 'text-slate-500 hover:bg-slate-100'
     }`}
   >
     <Icon size={20} />
-    <span className="font-medium">{label}</span>
+    {!collapsed && <span className="font-medium">{label}</span>}
   </button>
 );
 
@@ -78,6 +80,7 @@ export default function App() {
 
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<HealthRecord[]>([]);
   const [plans, setPlans] = useState<HealthPlan[]>([]);
@@ -167,8 +170,12 @@ export default function App() {
         // Auto-generate plan if no plans exist and profile is complete
         if (fetchedPlans.length === 0 && userData.age && userData.weight && userData.height) {
           console.log("No plans found, auto-generating plan...");
-          await handleGeneratePlan();
+          await handleGeneratePlan(userData);
         }
+      } else if (userRes.status === 404) {
+        console.warn("User not found in database, logging out...");
+        setUser(null);
+        localStorage.removeItem('user');
       }
     } catch (e) {
       console.error("Failed to fetch data", e);
@@ -241,30 +248,35 @@ export default function App() {
     }
   };
 
-  const handleGeneratePlan = async () => {
-    if (!user || !user.id) {
+  const handleGeneratePlan = async (userOverride?: any) => {
+    const currentUser = userOverride || user;
+    if (!currentUser || !currentUser.id) {
       console.error("User or User ID is missing, cannot generate plan.");
-      alert(lang === 'vi' ? 'Không tìm thấy thông tin người dùng, không thể tạo kế hoạch.' : 'User information missing, cannot generate plan.');
+      if (!userOverride) {
+        alert(lang === 'vi' ? 'Không tìm thấy thông tin người dùng, không thể tạo kế hoạch.' : 'User information missing, cannot generate plan.');
+      }
       return;
     }
-    if (!user.age || !user.weight || !user.height) {
-      alert(lang === 'vi' ? 'Vui lòng cập nhật thông tin cá nhân (tuổi, chiều cao, cân nặng) trước khi tạo kế hoạch.' : 'Please update your profile (age, height, weight) before generating a plan.');
-      setActiveTab('settings');
+    if (!currentUser.age || !currentUser.weight || !currentUser.height) {
+      if (!userOverride) {
+        alert(lang === 'vi' ? 'Vui lòng cập nhật thông tin cá nhân (tuổi, chiều cao, cân nặng) trước khi tạo kế hoạch.' : 'Please update your profile (age, height, weight) before generating a plan.');
+        setActiveTab('settings');
+      }
       return;
     }
     setLoading(true);
     try {
-      console.log("Generating plan for user:", user);
+      console.log("Generating plan for user:", currentUser);
       const plan = await generateHealthPlan({
-        age: user.age,
-        gender: user.gender || 'Other',
-        height: user.height,
-        weight: user.weight,
-        targetWeight: user.target_weight || user.weight,
-        workoutIntensity: user.workout_intensity || 'medium',
-        activityLevel: user.activity_level || 'Moderate',
-        conditions: user.conditions?.split(',') || [],
-        goal: user.goal || 'General Health'
+        age: currentUser.age,
+        gender: currentUser.gender || 'Other',
+        height: currentUser.height,
+        weight: currentUser.weight,
+        targetWeight: currentUser.target_weight || currentUser.weight,
+        workoutIntensity: currentUser.workout_intensity || 'medium',
+        activityLevel: currentUser.activity_level || 'Moderate',
+        conditions: currentUser.conditions?.split(',') || [],
+        goal: currentUser.goal || 'General Health'
       }, lang);
 
       console.log("Generated plan:", plan);
@@ -273,7 +285,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: user.id,
+          user_id: currentUser.id,
           type: 'comprehensive',
           content: plan
         })
@@ -282,7 +294,9 @@ export default function App() {
       if (!res.ok) {
         const errorText = await res.text();
         console.error("Failed to save plan, server response:", res.status, errorText);
-        alert(lang === 'vi' ? `Lỗi khi lưu kế hoạch: ${errorText}` : `Failed to save plan: ${errorText}`);
+        if (!userOverride) {
+          alert(lang === 'vi' ? `Lỗi khi lưu kế hoạch: ${errorText}` : `Failed to save plan: ${errorText}`);
+        }
         setLoading(false);
         return;
       }
@@ -290,10 +304,12 @@ export default function App() {
       const savePlanResponse = await res.json();
       console.log("Save plan response:", savePlanResponse);
 
-      fetchUserData(user.id);
+      fetchUserData(currentUser.id);
     } catch (e) {
       console.error("Error in handleGeneratePlan:", e);
-      alert(lang === 'vi' ? 'Không thể tạo kế hoạch.' : 'Failed to generate plan.');
+      if (!userOverride) {
+        alert(lang === 'vi' ? 'Không thể tạo kế hoạch.' : 'Failed to generate plan.');
+      }
     } finally {
       setLoading(false);
     }
@@ -611,30 +627,40 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col fixed h-full">
-        <div className="flex items-center gap-2 mb-10">
-          <div className="bg-emerald-500 p-1.5 rounded-lg">
-            <Activity className="text-white" size={20} />
-          </div>
-          <span className="text-lg font-bold tracking-tight">{t.appName}</span>
+      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-slate-200 p-4 flex flex-col fixed h-full transition-all duration-300 z-40`}>
+        <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} mb-10 px-2`}>
+          {!isSidebarCollapsed && (
+            <div className="flex items-center gap-2">
+              <div className="bg-emerald-500 p-1.5 rounded-lg">
+                <Activity className="text-white" size={20} />
+              </div>
+              <span className="text-lg font-bold tracking-tight">{t.appName}</span>
+            </div>
+          )}
+          <button 
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-500"
+          >
+            <Menu size={20} />
+          </button>
         </div>
 
         <nav className="flex-1 space-y-2">
-          <SidebarItem icon={LayoutDashboard} label={t.overview} active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
-          <SidebarItem icon={ClipboardList} label={t.metrics} active={activeTab === 'metrics'} onClick={() => setActiveTab('metrics')} />
-          <SidebarItem icon={Dumbbell} label={t.workout} active={activeTab === 'workout'} onClick={() => setActiveTab('workout')} />
-          <SidebarItem icon={Utensils} label={t.nutrition} active={activeTab === 'nutrition'} onClick={() => setActiveTab('nutrition')} />
-          <SidebarItem icon={TrendingUp} label={t.progress} active={activeTab === 'progress'} onClick={() => setActiveTab('progress')} />
+          <SidebarItem icon={LayoutDashboard} label={t.overview} active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} collapsed={isSidebarCollapsed} />
+          <SidebarItem icon={ClipboardList} label={t.metrics} active={activeTab === 'metrics'} onClick={() => setActiveTab('metrics')} collapsed={isSidebarCollapsed} />
+          <SidebarItem icon={Dumbbell} label={t.workout} active={activeTab === 'workout'} onClick={() => setActiveTab('workout')} collapsed={isSidebarCollapsed} />
+          <SidebarItem icon={Utensils} label={t.nutrition} active={activeTab === 'nutrition'} onClick={() => setActiveTab('nutrition')} collapsed={isSidebarCollapsed} />
+          <SidebarItem icon={TrendingUp} label={t.progress} active={activeTab === 'progress'} onClick={() => setActiveTab('progress')} collapsed={isSidebarCollapsed} />
         </nav>
 
         <div className="pt-6 border-t border-slate-100 space-y-2">
-          <SidebarItem icon={Settings} label={t.settings} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
-          <SidebarItem icon={LogOut} label={t.logout} active={false} onClick={handleLogout} />
+          <SidebarItem icon={Settings} label={t.settings} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={isSidebarCollapsed} />
+          <SidebarItem icon={LogOut} label={t.logout} active={false} onClick={handleLogout} collapsed={isSidebarCollapsed} />
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 ml-64 p-10">
+      <main className={`flex-1 ${isSidebarCollapsed ? 'ml-20' : 'ml-64'} p-10 transition-all duration-300`}>
         <header className="flex justify-between items-center mb-10">
           <div>
             <h2 className="text-3xl font-bold text-slate-900">{t.hello}, {user.name}</h2>
@@ -859,7 +885,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {latestPlan?.workoutPlan ? latestPlan.workoutPlan.map((day: any, i: number) => (
+                {Array.isArray(latestPlan?.workoutPlan) ? latestPlan.workoutPlan.map((day: any, i: number) => (
                   <div key={i} className="bg-white p-6 rounded-3xl card-shadow border border-slate-100">
                     <div className="flex justify-between items-center mb-4">
                       <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">{day.day}</span>
@@ -1076,9 +1102,18 @@ export default function App() {
                   </div>
 
                   <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
-                    <h3 className="text-xl font-bold mb-6">{t.sampleMeals}</h3>
+                    <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold">{t.sampleMeals}</h3>
+                      <button 
+                        onClick={() => handleGeneratePlan()}
+                        className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-bold transition-colors"
+                      >
+                        <RotateCcw size={16} />
+                        {lang === 'vi' ? 'Làm mới thực đơn' : 'Refresh Menu'}
+                      </button>
+                    </div>
                     <div className="space-y-4">
-                      {latestPlan?.nutritionPlan.sampleMeals ? latestPlan.nutritionPlan.sampleMeals.map((meal: string, i: number) => (
+                      {Array.isArray(latestPlan?.nutritionPlan.sampleMeals) ? latestPlan.nutritionPlan.sampleMeals.map((meal: string, i: number) => (
                         <div key={i} className="flex items-center gap-6 p-4 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
                           <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center shrink-0">
                             <Utensils className="text-emerald-600" size={24} />
@@ -1088,16 +1123,13 @@ export default function App() {
                             <p className="font-bold text-slate-800">{meal}</p>
                           </div>
                         </div>
-                      )) : (
+                      )) : typeof latestPlan?.nutritionPlan.sampleMeals === 'string' ? (
+                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                          <p className="text-slate-800">{latestPlan.nutritionPlan.sampleMeals}</p>
+                        </div>
+                      ) : (
                         <div className="text-center py-6">
-                          <p className="text-slate-400 mb-4">{t.noReports}</p>
-                          <button 
-                            onClick={handleGeneratePlan}
-                            disabled={loading}
-                            className="text-emerald-600 font-bold hover:underline disabled:opacity-50"
-                          >
-                            {loading ? t.processing : (lang === 'vi' ? 'Tạo kế hoạch từ hồ sơ' : 'Generate Plan from Profile')}
-                          </button>
+                          <p className="text-slate-400 italic">No sample meals available.</p>
                         </div>
                       )}
                     </div>
@@ -1106,12 +1138,17 @@ export default function App() {
                   <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
                     <h3 className="text-xl font-bold mb-4">{t.recommendations}</h3>
                     <ul className="space-y-3">
-                      {latestPlan?.recommendations ? latestPlan.recommendations.map((rec: string, i: number) => (
+                      {Array.isArray(latestPlan?.recommendations) ? latestPlan.recommendations.map((rec: string, i: number) => (
                         <li key={i} className="flex gap-3 text-sm text-slate-600">
                           <ChevronRight className="text-emerald-500 shrink-0" size={18} />
                           <span>{rec}</span>
                         </li>
-                      )) : (
+                      )) : typeof latestPlan?.recommendations === 'string' ? (
+                        <li className="flex gap-3 text-sm text-slate-600">
+                          <ChevronRight className="text-emerald-500 shrink-0" size={18} />
+                          <span>{latestPlan.recommendations}</span>
+                        </li>
+                      ) : (
                         <li className="text-slate-400 italic">{t.noReports}</li>
                       )}
                     </ul>

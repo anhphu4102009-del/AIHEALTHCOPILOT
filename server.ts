@@ -5,8 +5,11 @@ import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import dotenv from "dotenv";
 import axios from "axios";
+import OpenAI from "openai";
 
 dotenv.config();
+
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,6 +116,9 @@ async function startServer() {
 
   app.get("/api/user/:id", (req, res) => {
     const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
     res.json(user);
   });
 
@@ -296,10 +302,11 @@ async function startServer() {
       stmt.run(user_id, type, contentString);
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Error inserting plan:", error.message, error.stack);
       if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+        console.warn(`Plan save rejected: User ID ${user_id} does not exist.`);
         return res.status(400).json({ error: "User ID does not exist." });
       }
+      console.error("Error inserting plan:", error.message, error.stack);
       res.status(500).json({ error: "Failed to save plan due to internal server error." });
     }
   });
@@ -327,6 +334,33 @@ async function startServer() {
   app.get("/api/progress/:userId", (req, res) => {
     const logs = db.prepare("SELECT * FROM progress_logs WHERE user_id = ? ORDER BY created_at DESC").all(req.params.userId);
     res.json(logs);
+  });
+
+  // AI Proxy for OpenAI (to keep API key secure)
+  app.post("/api/ai/chat", async (req, res) => {
+    if (!openai) {
+      return res.status(400).json({ error: "OpenAI API key not configured on server." });
+    }
+
+    const { messages, model = "gpt-4o-mini", response_format } = req.body;
+
+    try {
+      // Ensure we use a model that supports vision if images are present
+      const selectedModel = messages.some((m: any) => 
+        Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
+      ) ? "gpt-4o-mini" : model;
+
+      const completion = await openai.chat.completions.create({
+        model: selectedModel,
+        messages,
+        response_format
+      });
+
+      res.json(completion.choices[0].message);
+    } catch (error: any) {
+      console.error("OpenAI Error:", error);
+      res.status(500).json({ error: error.message || "Failed to call OpenAI" });
+    }
   });
 
   // Vite middleware for development
