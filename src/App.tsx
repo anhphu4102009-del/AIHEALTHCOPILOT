@@ -333,6 +333,13 @@ export default function App() {
         body: JSON.stringify({ email, password, name })
       });
       const data = await res.json();
+      
+      if (!res.ok) {
+        alert(data.error || (lang === 'vi' ? "Đăng nhập thất bại." : "Auth failed."));
+        setLoading(false);
+        return;
+      }
+
       if (data.id) {
         setUser(data);
         localStorage.setItem('user', JSON.stringify(data));

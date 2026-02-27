@@ -53,17 +53,24 @@ async function startServer() {
 
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .eq('password', password)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .eq('password', password)
+        .maybeSingle();
 
-    if (data) {
-      res.json(data);
-    } else {
-      res.status(401).json({ error: "Invalid credentials" });
+      if (error) throw error;
+
+      if (data) {
+        res.json(data);
+      } else {
+        res.status(401).json({ error: "Email hoặc mật khẩu không chính xác." });
+      }
+    } catch (e: any) {
+      console.error("Login error:", e);
+      res.status(500).json({ error: "Lỗi hệ thống khi đăng nhập." });
     }
   });
 
