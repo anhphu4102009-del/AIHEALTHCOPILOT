@@ -132,6 +132,13 @@ export default function App() {
         fetch(`/api/user/${userId}`),
         fetch(`/api/meals/${userId}`)
       ]);
+
+      if (userRes.status === 404) {
+        console.warn("User session stale, logging out...");
+        setUser(null);
+        localStorage.removeItem('user');
+        return;
+      }
       
       const parseJsonSafely = async (response: Response) => {
         if (!response.ok) {
