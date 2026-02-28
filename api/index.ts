@@ -111,6 +111,7 @@ app.get("/api/auth/strava/url", (req, res) => {
   appUrl = appUrl.replace(/\/$/, "");
   
   const redirectUri = `${appUrl}/api/auth/strava/callback`;
+  console.log("Strava Redirect URI:", redirectUri);
   
   const params = new URLSearchParams({
     client_id: clientId!,

@@ -360,6 +360,33 @@ export default function App() {
     setActiveTab('overview');
   };
 
+  const handleLogProgress = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!user) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const log = {
+      user_id: user.id,
+      weight: parseFloat(formData.get('weight') as string),
+      mood: formData.get('mood') as string,
+      energy_level: parseInt(formData.get('energy_level') as string),
+      notes: formData.get('notes') as string,
+    };
+
+    try {
+      await fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(log)
+      });
+      fetchUserData(user.id);
+      form.reset();
+      alert(lang === 'vi' ? "Đã lưu tiến độ!" : "Progress saved!");
+    } catch (e: any) {
+      console.error("Failed to log progress", e.message);
+    }
+  };
+
   const adjustIntensity = async (newIntensity: 'low' | 'medium' | 'high') => {
     if (!user) return;
     setLoading(true);
@@ -918,7 +945,9 @@ export default function App() {
                           <CheckCircle2 size={16} className="text-emerald-600" />
                         </div>
                       </div>
-                      <h4 className="text-lg font-bold mb-2">{day.activity || day.exercise || day.name || (lang === 'vi' ? 'Bài tập' : 'Exercise')}</h4>
+                      <h4 className="text-lg font-bold mb-2">
+                        {day.activity || day.exercise || day.name || day.workout || (lang === 'vi' ? 'Bài tập' : 'Exercise')}
+                      </h4>
                       <div className="flex items-center gap-4 text-sm text-slate-500">
                         <div className="flex items-center gap-1">
                           <Clock size={14} />
@@ -1177,6 +1206,119 @@ export default function App() {
                         <li className="text-slate-400 italic">{t.noReports}</li>
                       )}
                     </ul>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'progress' && (
+            <motion.div 
+              key="progress"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-8"
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1 space-y-6">
+                  {/* Log Progress Form */}
+                  <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
+                    <h3 className="text-xl font-bold mb-6">{t.logProgress}</h3>
+                    <form onSubmit={handleLogProgress} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t.currentWeight}</label>
+                        <input name="weight" type="number" step="0.1" required defaultValue={user?.weight} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t.mood}</label>
+                        <select name="mood" required className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
+                          <option value="Happy">{t.moodHappy}</option>
+                          <option value="Neutral">{t.moodNeutral}</option>
+                          <option value="Sad">{t.moodSad}</option>
+                          <option value="Tired">{t.moodTired}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t.energyLevel}</label>
+                        <input name="energy_level" type="number" min="1" max="10" required defaultValue="7" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t.notes}</label>
+                        <textarea name="notes" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none h-24"></textarea>
+                      </div>
+                      <button className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
+                        <Plus size={18} />
+                        {t.saveProgress}
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-2 space-y-8">
+                  {/* Weight Chart */}
+                  <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
+                    <h3 className="text-xl font-bold mb-6">{t.weightProgress}</h3>
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={[...progress].reverse()}>
+                          <defs>
+                            <linearGradient id="colorWeight" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis 
+                            dataKey="created_at" 
+                            tickFormatter={(str) => new Date(str).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                            stroke="#94a3b8"
+                            fontSize={12}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis 
+                            stroke="#94a3b8"
+                            fontSize={12}
+                            tickLine={false}
+                            axisLine={false}
+                            domain={['dataMin - 2', 'dataMax + 2']}
+                          />
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                            labelFormatter={(str) => new Date(str).toLocaleDateString()}
+                          />
+                          <Area type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorWeight)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Progress History */}
+                  <div className="bg-white p-8 rounded-3xl card-shadow border border-slate-100">
+                    <h3 className="text-xl font-bold mb-6">{t.progressHistory}</h3>
+                    <div className="space-y-4">
+                      {progress.length > 0 ? progress.map((log, i) => (
+                        <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm text-2xl">
+                              {log.mood === 'Happy' ? '😊' : log.mood === 'Neutral' ? '😐' : log.mood === 'Sad' ? '😢' : '😴'}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800">{log.weight} kg</p>
+                              <p className="text-xs text-slate-400">
+                                {new Date(log.created_at).toLocaleDateString()} • Energy: {log.energy_level}/10
+                              </p>
+                            </div>
+                          </div>
+                          {log.notes && (
+                            <p className="text-sm text-slate-500 italic max-w-[200px] truncate">{log.notes}</p>
+                          )}
+                        </div>
+                      )) : (
+                        <div className="text-center py-10 text-slate-400 italic">No progress logs yet.</div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -138,8 +138,10 @@ export const generateHealthPlan = async (profile: HealthProfile, lang: string = 
     Workout Intensity Level: ${profile.workoutIntensity || 'medium'}
     
     The plan should include:
-    1. A 7-day workout schedule (exercise type, duration, intensity). Tailor the exercises to help achieve the "Desired Goal" and "Target Weight".
-    2. Adjust the workout volume and intensity based on the "Workout Intensity Level" provided (${profile.workoutIntensity || 'medium'}).
+    1. A 7-day workout schedule. For each day, provide a specific "activity" name (e.g., "Brisk Walking", "Bodyweight Squats", "Yoga for Beginners"), "duration" (e.g., "30 mins"), and "intensity" (Low, Medium, High). 
+    2. Tailor the exercises strictly to the user's profile: Age ${profile.age}, Weight ${profile.weight}kg, Height ${profile.height}cm, and Goal "${profile.goal}".
+    3. If the user has health conditions (${profile.conditions.join(', ')}), ensure the exercises are safe and appropriate.
+    4. Adjust the workout volume and intensity based on the "Workout Intensity Level" provided (${profile.workoutIntensity || 'medium'}).
     3. A daily nutrition plan (calorie target, macronutrient breakdown, sample meals). 
        IMPORTANT: Generate at least 3-4 specific sample meals (Breakfast, Lunch, Dinner, Snack) that are culturally appropriate and tailored to the user's Age, Height, and Weight to meet their caloric needs.
     4. Specific food restrictions or recommendations based on health conditions.
